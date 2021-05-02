@@ -1,0 +1,7 @@
+[package]
+name = "digital-circuit-simulator"
+version = "0.1.0"
+authors = ["Joe Ferner <joe@fernsroth.com>"]
+edition = "2018"
+
+[dependencies]
