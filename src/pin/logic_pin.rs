@@ -7,6 +7,17 @@ pub struct LogicPin {
 }
 
 impl LogicPin {
+    pub const TRUE: u32 = u32::MAX;
+    pub const FALSE: u32 = 0;
+
+    pub fn is_false(value: u32) -> bool {
+        value == LogicPin::FALSE
+    }
+
+    pub fn is_true(value: u32) -> bool {
+        value != LogicPin::FALSE
+    }
+
     pub fn new(direction: PinDirection) -> LogicPin {
         LogicPin {
             direction: direction,
