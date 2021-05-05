@@ -1,4 +1,5 @@
 use crate::pin::Pin;
+use core::fmt::Debug;
 
 pub trait Device {
     fn next_tick(&self) -> u64;
@@ -13,8 +14,10 @@ pub trait Device {
     ///
     /// * `i` - one based index into pins
     fn get_pin(&self, i: usize) -> &dyn Pin;
+}
 
-    fn set_pin(&mut self, t: u64, i: usize, value: u32);
-
-    fn get_pin_value(&self, i: usize) -> u32;
+impl Debug for dyn Device {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+        f.debug_struct("Device").finish()
+    }
 }
