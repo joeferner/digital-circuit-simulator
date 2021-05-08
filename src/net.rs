@@ -2,16 +2,16 @@ use core::slice::Iter;
 
 #[derive(Debug)]
 pub struct NetConnection {
-    device: u32,
+    device: usize,
     pin: usize,
 }
 
 impl NetConnection {
-    pub fn new(device: u32, pin: usize) -> NetConnection {
+    pub fn new(device: usize, pin: usize) -> NetConnection {
         return NetConnection { device, pin };
     }
 
-    pub fn get_device(&self) -> u32 {
+    pub fn get_device(&self) -> usize {
         return self.device;
     }
 

@@ -1,19 +1,16 @@
-use crate::pin::Pin;
+use crate::CircuitToDeviceMessage;
+use crate::DeviceToCircuitMessage;
 use core::fmt::Debug;
+use std::sync::mpsc;
 
-pub trait Device {
-    fn next_tick(&self) -> u64;
+pub trait Device: Send {
+    fn run(
+        &mut self,
+        tx: mpsc::Sender<DeviceToCircuitMessage>,
+        rx: mpsc::Receiver<CircuitToDeviceMessage>,
+    );
 
-    fn step(&mut self, t: u64);
-
-    fn get_pin_count(&self) -> usize;
-
-    /// Returns the pin at offset i (one based)
-    ///
-    /// # Arguments
-    ///
-    /// * `i` - one based index into pins
-    fn get_pin(&self, i: usize) -> &dyn Pin;
+    fn get_name(&self) -> &str;
 }
 
 impl Debug for dyn Device {

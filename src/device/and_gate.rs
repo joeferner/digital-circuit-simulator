@@ -1,15 +1,13 @@
 use crate::device::Device;
-use crate::pin::LogicPin;
-use crate::pin::Pin;
-use crate::pin::PinDirection;
+use crate::CircuitToDeviceMessage;
+use crate::DeviceToCircuitMessage;
+use std::sync::mpsc;
 
 #[derive(Debug)]
 pub struct AndGate {
-    pins: [LogicPin; 3],
-    input1: u32,
-    input2: u32,
-    output: u32,
-    next_tick: u64,
+    name: String,
+    input1: bool,
+    input2: bool,
 }
 
 impl AndGate {
@@ -17,42 +15,45 @@ impl AndGate {
     pub const PIN_INPUT2: usize = 2;
     pub const PIN_OUTPUT: usize = 3;
 
-    pub fn new() -> AndGate {
+    pub fn new(name: &str) -> AndGate {
         AndGate {
-            pins: [
-                LogicPin::new(PinDirection::Input),
-                LogicPin::new(PinDirection::Input),
-                LogicPin::new(PinDirection::Output),
-            ],
-            input1: LogicPin::FALSE,
-            input2: LogicPin::FALSE,
-            output: LogicPin::FALSE,
-            next_tick: u64::MAX,
+            name: name.to_string(),
+            input1: false,
+            input2: false,
         }
     }
 }
 
 impl Device for AndGate {
-    fn next_tick(&self) -> u64 {
-        self.next_tick
-    }
-
-    fn step(&mut self, _t: u64) {
-        // TODO tell circuit pin changed
-        if LogicPin::is_true(self.input1) && LogicPin::is_true(self.input2) {
-            self.output = LogicPin::TRUE
-        } else {
-            self.output = LogicPin::FALSE
+    fn run(
+        &mut self,
+        tx: mpsc::Sender<DeviceToCircuitMessage>,
+        rx: mpsc::Receiver<CircuitToDeviceMessage>,
+    ) {
+        let mut run = true;
+        while run {
+            match rx.recv() {
+                Result::Ok(message) => match message {
+                    CircuitToDeviceMessage::NextTick { tick: _ } => {
+                        tx.send(DeviceToCircuitMessage::NextTick { tick: u64::MAX })
+                            .unwrap();
+                    }
+                    CircuitToDeviceMessage::Terminate => {
+                        run = false;
+                    }
+                    CircuitToDeviceMessage::Data { data: _ } => {
+                        panic!("not expecting data");
+                    }
+                },
+                Result::Err(_err) => {
+                    run = false;
+                }
+            }
         }
-        self.next_tick = u64::MAX;
     }
 
-    fn get_pin_count(&self) -> usize {
-        return self.pins.len();
-    }
-
-    fn get_pin(&self, i: usize) -> &dyn Pin {
-        return &self.pins[i - 1];
+    fn get_name(&self) -> &str {
+        return &self.name;
     }
 }
 
@@ -60,56 +61,49 @@ impl Device for AndGate {
 mod tests {
     use crate::device::AndGate;
     use crate::device::Device;
-    use crate::pin::LogicPin;
+    use crate::device::PinDirection;
+    use crate::device::TestProbe;
+    use crate::device::TestProbeSetData;
     use crate::Circuit;
     use crate::Net;
     use crate::NetConnection;
+    use std::cell::RefCell;
 
     #[test]
     fn it_works() {
-        const DEVICE_AND_GATE: u32 = 0;
-        let and_gate = AndGate::new();
-        let devices: Vec<Box<dyn Device>> = vec![Box::new(and_gate)];
-        let net0 = Net::new(vec![NetConnection::new(
-            DEVICE_AND_GATE,
-            AndGate::PIN_INPUT1,
-        )]);
-        let net1 = Net::new(vec![NetConnection::new(
-            DEVICE_AND_GATE,
-            AndGate::PIN_INPUT2,
-        )]);
+        const DEVICE_AND_GATE: usize = 0;
+        const DEVICE_INPUT1: usize = 1;
+        const DEVICE_INPUT2: usize = 2;
+        let and_gate = AndGate::new("and");
+        let input1_source = TestProbe::new("input1", 0, PinDirection::Output);
+        let input2_source = TestProbe::new("input2", 0, PinDirection::Output);
+        let devices: Vec<RefCell<Box<dyn Device>>> = vec![
+            RefCell::new(Box::new(and_gate)),
+            RefCell::new(Box::new(input1_source)),
+            RefCell::new(Box::new(input2_source)),
+        ];
+        let net0 = Net::new(vec![
+            NetConnection::new(DEVICE_AND_GATE, AndGate::PIN_INPUT1),
+            NetConnection::new(DEVICE_INPUT1, TestProbe::PIN),
+        ]);
+        let net1 = Net::new(vec![
+            NetConnection::new(DEVICE_AND_GATE, AndGate::PIN_INPUT2),
+            NetConnection::new(DEVICE_INPUT2, TestProbe::PIN),
+        ]);
         let net2 = Net::new(vec![NetConnection::new(
             DEVICE_AND_GATE,
             AndGate::PIN_OUTPUT,
         )]);
         let nets = vec![net0, net1, net2];
         let mut circuit = Circuit::new(devices, nets);
+        let mut next_tick = 1;
 
-        circuit.tick(1);
-        assert_eq!(
-            LogicPin::FALSE,
-            circuit.get_device_pin_value(DEVICE_AND_GATE, AndGate::PIN_OUTPUT)
-        );
+        next_tick = circuit.tick(next_tick);
+        assert_eq!(u64::MAX, next_tick);
 
-        circuit.set_device_pin_value(DEVICE_AND_GATE, AndGate::PIN_INPUT1, LogicPin::TRUE);
-        circuit.tick(2);
-        assert_eq!(
-            LogicPin::FALSE,
-            circuit.get_device_pin_value(DEVICE_AND_GATE, AndGate::PIN_OUTPUT)
-        );
-
-        circuit.set_device_pin_value(DEVICE_AND_GATE, AndGate::PIN_INPUT2, LogicPin::TRUE);
-        circuit.tick(3);
-        assert_eq!(
-            LogicPin::TRUE,
-            circuit.get_device_pin_value(DEVICE_AND_GATE, AndGate::PIN_OUTPUT)
-        );
-
-        circuit.set_device_pin_value(DEVICE_AND_GATE, AndGate::PIN_INPUT1, LogicPin::FALSE);
-        circuit.tick(4);
-        assert_eq!(
-            LogicPin::FALSE,
-            circuit.get_device_pin_value(DEVICE_AND_GATE, AndGate::PIN_OUTPUT)
-        );
+        circuit.send_device_data(DEVICE_INPUT1, Box::new(TestProbeSetData::output_high()));
+        next_tick = 2;
+        next_tick = circuit.tick(next_tick);
+        assert_eq!(u64::MAX, next_tick);
     }
 }
