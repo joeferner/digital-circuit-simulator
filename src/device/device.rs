@@ -11,6 +11,9 @@ pub trait Device: Send {
     );
 
     fn get_name(&self) -> &str;
+
+    /// Gets the number of pins
+    fn get_pin_count(&self) -> usize;
 }
 
 impl Debug for dyn Device {

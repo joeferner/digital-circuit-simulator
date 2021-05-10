@@ -1,8 +1,9 @@
 use crate::device::Device;
-use crate::device::PinDirection;
+use crate::Circuit;
 use crate::CircuitToDeviceMessage;
 use crate::DeviceData;
 use crate::DeviceToCircuitMessage;
+use crate::PinDirection;
 use std::any::Any;
 use std::sync::mpsc;
 
@@ -24,6 +25,27 @@ impl TestProbe {
             direction,
             dirty: true,
         }
+    }
+
+    pub fn set_output_high(circuit: &Circuit, device: usize) {
+        circuit.send_device_data(device, Box::new(TestProbeSetData::output_high()));
+    }
+
+    pub fn set_output_low(circuit: &Circuit, device: usize) {
+        circuit.send_device_data(device, Box::new(TestProbeSetData::output_low()));
+    }
+
+    pub fn set_input(circuit: &Circuit, device: usize) {
+        circuit.send_device_data(device, Box::new(TestProbeSetData::input()));
+    }
+
+    pub fn get_value(circuit: &Circuit, device: usize) -> u32 {
+        let results = circuit.recv_device_data(device, Box::new(TestProbeGetDataRequest::new()));
+        let data = results
+            .as_any()
+            .downcast_ref::<TestProbeGetDataResponse>()
+            .unwrap();
+        return data.get_value();
     }
 }
 
@@ -50,14 +72,45 @@ impl Device for TestProbe {
                         tx.send(DeviceToCircuitMessage::NextTick { tick: u64::MAX })
                             .unwrap();
                     }
+                    CircuitToDeviceMessage::SetPin {
+                        tick: _,
+                        pin,
+                        value,
+                        last,
+                    } => match self.direction {
+                        PinDirection::Input => {
+                            if pin == TestProbe::PIN {
+                                self.value = value;
+                            } else {
+                                panic!("cannot set pin {} on test probe", pin);
+                            }
+                            if last {
+                                tx.send(DeviceToCircuitMessage::NextTick { tick: u64::MAX })
+                                    .unwrap();
+                            }
+                        }
+                        PinDirection::Output => {
+                            panic!("invalid set pin");
+                        }
+                    },
                     CircuitToDeviceMessage::Terminate => {
                         run = false;
                     }
                     CircuitToDeviceMessage::Data { data } => {
-                        let data = data.as_any().downcast_ref::<TestProbeSetData>().unwrap();
-                        self.value = data.get_value();
-                        self.direction = data.get_direction();
-                        self.dirty = true;
+                        if let Some(set_data) = data.as_any().downcast_ref::<TestProbeSetData>() {
+                            self.value = set_data.get_value();
+                            self.direction = set_data.get_direction();
+                            self.dirty = true;
+                        } else if let Some(_get_data) =
+                            data.as_any().downcast_ref::<TestProbeGetDataRequest>()
+                        {
+                            tx.send(DeviceToCircuitMessage::Data {
+                                data: Box::new(TestProbeGetDataResponse::new(self.value)),
+                            })
+                            .unwrap();
+                        } else {
+                            panic!("unexpected data");
+                        }
                     }
                 },
                 Result::Err(_err) => {
@@ -69,6 +122,10 @@ impl Device for TestProbe {
 
     fn get_name(&self) -> &str {
         return &self.name;
+    }
+
+    fn get_pin_count(&self) -> usize {
+        return 1;
     }
 }
 
@@ -105,6 +162,42 @@ impl TestProbeSetData {
 }
 
 impl DeviceData for TestProbeSetData {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+#[derive(Debug)]
+pub struct TestProbeGetDataRequest {}
+
+impl TestProbeGetDataRequest {
+    pub fn new() -> TestProbeGetDataRequest {
+        return TestProbeGetDataRequest {};
+    }
+}
+
+impl DeviceData for TestProbeGetDataRequest {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+#[derive(Debug)]
+pub struct TestProbeGetDataResponse {
+    value: u32,
+}
+
+impl TestProbeGetDataResponse {
+    pub fn new(value: u32) -> TestProbeGetDataResponse {
+        return TestProbeGetDataResponse { value };
+    }
+
+    pub fn get_value(&self) -> u32 {
+        return self.value;
+    }
+}
+
+impl DeviceData for TestProbeGetDataResponse {
     fn as_any(&self) -> &dyn Any {
         self
     }

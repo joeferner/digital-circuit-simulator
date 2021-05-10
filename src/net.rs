@@ -23,23 +23,11 @@ impl NetConnection {
 #[derive(Debug)]
 pub struct Net {
     connections: Vec<NetConnection>,
-    value: u32,
 }
 
 impl Net {
     pub fn new(connections: Vec<NetConnection>) -> Net {
-        return Net {
-            connections,
-            value: 0,
-        };
-    }
-
-    pub fn get_value(&self) -> u32 {
-        return self.value;
-    }
-
-    pub fn set_value(&mut self, value: u32) {
-        self.value = value;
+        return Net { connections };
     }
 
     pub fn connections_iter(&self) -> Iter<NetConnection> {
