@@ -1,6 +1,7 @@
 use crate::DeviceData;
 use crate::PinDirection;
 
+#[derive(Debug)]
 pub enum DeviceToCircuitMessage {
     NextTick {
         tick: u64,
@@ -15,6 +16,7 @@ pub enum DeviceToCircuitMessage {
     },
 }
 
+#[derive(Debug)]
 pub enum CircuitToDeviceMessage {
     Data {
         data: Box<dyn DeviceData>,

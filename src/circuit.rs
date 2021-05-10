@@ -89,6 +89,11 @@ impl Circuit {
         }
 
         // wait for devices to send next tick reply
+        let mut devices_set_pins: Vec<Vec<SetPin>> = Vec::new();
+        for _device in &self.device_wrappers {
+            devices_set_pins.push(Vec::new());
+        }
+
         let mut min_next_tick = u64::MAX;
         for device in &self.device_wrappers {
             let mut rx_next_tick = false;
@@ -104,9 +109,18 @@ impl Circuit {
                             pin,
                             value,
                             direction,
-                        } => {
-                            self.process_set_pin(tick, device, pin, value, direction);
-                        }
+                        } => match direction {
+                            PinDirection::Output => {
+                                let connections: &Vec<PinRef> = &self.nets[device.index][pin];
+                                for connection in connections.iter() {
+                                    devices_set_pins[connection.device].push(SetPin {
+                                        pin: connection.pin,
+                                        value,
+                                    });
+                                }
+                            }
+                            PinDirection::Input => (),
+                        },
 
                         DeviceToCircuitMessage::Data { data: _ } => {
                             panic!("unexpected data");
@@ -119,35 +133,40 @@ impl Circuit {
             }
         }
 
-        self.last_tick = tick;
-        return min_next_tick;
-    }
-
-    fn process_set_pin(
-        &self,
-        tick: u64,
-        device: &DeviceWrapper,
-        pin: usize,
-        value: u32,
-        direction: PinDirection,
-    ) {
-        match direction {
-            PinDirection::Output => {
-                let connections: &Vec<PinRef> = &self.nets[device.index][pin];
-                for connection in connections.iter() {
-                    self.device_wrappers[connection.device]
-                        .tx
-                        .send(CircuitToDeviceMessage::SetPin {
-                            tick,
-                            pin: connection.pin,
-                            value: value,
-                            last: true,
-                        })
-                        .unwrap();
+        // set pins
+        for (device_index, device_set_pins) in devices_set_pins.iter().enumerate() {
+            for (set_pin_index, set_pin) in device_set_pins.iter().enumerate() {
+                self.device_wrappers[device_index]
+                    .tx
+                    .send(CircuitToDeviceMessage::SetPin {
+                        tick,
+                        pin: set_pin.pin,
+                        value: set_pin.value,
+                        last: (device_set_pins.len() - 1) == set_pin_index,
+                    })
+                    .unwrap();
+            }
+        }
+        for (device_index, device_set_pins) in devices_set_pins.iter().enumerate() {
+            if device_set_pins.len() > 0 {
+                match self.device_wrappers[device_index].rx.recv() {
+                    Result::Ok(message) => match message {
+                        DeviceToCircuitMessage::NextTick { tick } => {
+                            min_next_tick = min_next_tick.min(tick);
+                        }
+                        _ => {
+                            panic!("unexpected device message {:?}", message);
+                        }
+                    },
+                    Result::Err(_err) => {
+                        panic!("failed to receive from device");
+                    }
                 }
             }
-            PinDirection::Input => (),
         }
+
+        self.last_tick = tick;
+        return min_next_tick;
     }
 
     pub fn get_last_tick(&self) -> u64 {
@@ -214,4 +233,10 @@ struct DeviceWrapper {
 struct PinRef {
     device: usize,
     pin: usize,
+}
+
+#[derive(Debug)]
+struct SetPin {
+    pin: usize,
+    value: u32,
 }

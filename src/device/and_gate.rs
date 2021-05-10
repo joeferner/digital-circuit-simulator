@@ -9,7 +9,8 @@ pub struct AndGate {
     name: String,
     input1: bool,
     input2: bool,
-    last: bool,
+    last_result: bool,
+    next_result: bool,
 }
 
 impl AndGate {
@@ -22,7 +23,8 @@ impl AndGate {
             name: name.to_string(),
             input1: false,
             input2: false,
-            last: false,
+            last_result: false,
+            next_result: false,
         }
     }
 }
@@ -38,14 +40,14 @@ impl Device for AndGate {
             match rx.recv() {
                 Result::Ok(message) => match message {
                     CircuitToDeviceMessage::NextTick { tick: _ } => {
-                        let new_result = self.input1 && self.input2;
-                        if new_result != self.last {
+                        if self.next_result != self.last_result {
                             tx.send(DeviceToCircuitMessage::SetPin {
                                 pin: AndGate::PIN_OUTPUT,
                                 value: u32::MAX,
                                 direction: PinDirection::Output,
                             })
                             .unwrap();
+                            self.last_result = self.next_result;
                         }
                         tx.send(DeviceToCircuitMessage::NextTick { tick: u64::MAX })
                             .unwrap();
@@ -67,8 +69,15 @@ impl Device for AndGate {
                             panic!("cannot set pin {} on and gate", pin);
                         }
                         if last {
-                            tx.send(DeviceToCircuitMessage::NextTick { tick: tick + 1 })
-                                .unwrap();
+                            let new_result = self.input1 && self.input2;
+                            if self.last_result != new_result {
+                                self.next_result = new_result;
+                                tx.send(DeviceToCircuitMessage::NextTick { tick: tick + 1 })
+                                    .unwrap();
+                            } else {
+                                tx.send(DeviceToCircuitMessage::NextTick { tick: u64::MAX })
+                                    .unwrap();
+                            }
                         }
                     }
                     CircuitToDeviceMessage::Data { data: _ } => {
@@ -142,6 +151,10 @@ mod tests {
 
         TestProbe::set_output_high(&circuit, DEVICE_INPUT2);
         next_tick = circuit.tick(3);
+        assert_eq!(4, next_tick); // and gate will set next tick + 1
+        assert_eq!(0, TestProbe::get_value(&circuit, DEVICE_OUTPUT));
+
+        next_tick = circuit.tick(4);
         assert_eq!(u64::MAX, next_tick);
         assert_eq!(u32::MAX, TestProbe::get_value(&circuit, DEVICE_OUTPUT));
     }
